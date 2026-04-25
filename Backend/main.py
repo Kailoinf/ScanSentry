@@ -1,14 +1,10 @@
-"""
-ScanSentry - 轻量级HTTP访问日志服务
-永久记录所有访问日志，海量数据长期留存
-"""
-
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Field, SQLModel, Session, create_engine, select, func
 from sqlalchemy.pool import StaticPool
@@ -74,6 +70,14 @@ class IPStatsResponse(BaseModel):
 # ========== FastAPI 应用 ==========
 app = FastAPI(title="ScanSentry", description="轻量级HTTP访问日志服务", version="1.0.0")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # ========== 中间件：记录所有请求（排除/show/me） ==========
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -120,6 +124,18 @@ def get_overview():
         total = session.exec(select(func.count(AccessLog.id))).one()
         unique_ips = session.exec(select(func.count(func.distinct(AccessLog.client_ip)))).one()
     return {"total_requests": total, "unique_ips": unique_ips}
+
+@app.get("/show/me/path")
+def get_path_stats(limit: int = Query(50, ge=1, le=500)):
+    with Session(engine) as session:
+        results = session.exec(
+            select(AccessLog.path, func.count(AccessLog.id).label("access_count"))
+            .group_by(AccessLog.path)
+            .order_by(func.count(AccessLog.id).desc())
+            .limit(limit)
+        ).all()
+    items = [{"path": r.path, "access_count": r.access_count} for r in results]
+    return {"total": len(items), "items": items}
 
 @app.get("/show/me/health")
 def health_check():
