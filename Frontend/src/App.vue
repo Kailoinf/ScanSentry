@@ -69,6 +69,13 @@ function next() {
   if (logs.value && page.value * pageSize < logs.value.total) { page.value++; load() }
 }
 
+function toBeijingTime(utc: string): string {
+  const d = new Date(utc)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const beijing = new Date(d.getTime() + 8 * 60 * 60 * 1000)
+  return `${beijing.getFullYear()}-${pad(beijing.getMonth() + 1)}-${pad(beijing.getDate())} ${pad(beijing.getHours())}:${pad(beijing.getMinutes())}:${pad(beijing.getSeconds())}`
+}
+
 load()
 </script>
 
@@ -104,7 +111,7 @@ load()
                 <td class="mono">{{ item.client_ip }}</td>
                 <td class="mono">{{ item.method }}</td>
                 <td class="mono">{{ item.path }}</td>
-                <td class="mono">{{ item.timestamp.replace('T', ' ').replace('+00:00', '') }}</td>
+                <td class="mono">{{ toBeijingTime(item.timestamp) }}</td>
               </tr>
             </tbody>
           </table>
