@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Field, SQLModel, Session, create_engine, select, func
 from sqlalchemy.pool import StaticPool
+import httpx
 
 # ========== 配置 ==========
 DB_PATH = Path(__file__).parent / "logs.db"
@@ -28,12 +29,38 @@ class AccessLog(SQLModel, table=True):
     path: str
     timestamp: str
 
+# ========== 数据模型：IP 信息 ==========
+class IPInfo(SQLModel, table=True):
+    __tablename__ = "ip_info"
+    ip: str = Field(primary_key=True)
+    location: str = Field(default="")
+    isp: str = Field(default="")
+
 # ========== 获取真实客户端IP（兼容反向代理） ==========
 def get_real_client_ip(request: Request) -> str:
     for header in ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"]:
         if val := request.headers.get(header):
             return val.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+# ========== 获取 IP 信息 ==========
+async def fetch_ip_info(ip: str) -> tuple[str, str]:
+    url = f"https://api.ip2location.io/?ip={ip}"
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=5.0)
+            data = resp.json()
+            if data.get("country_name"):
+                city = data.get("city_name") or ""
+                region = data.get("region_name") or ""
+                country = data.get("country_name") or ""
+                parts = [p for p in [city, region, country] if p]
+                location = ", ".join(parts)
+                isp = data.get("as") or ""
+                return location, isp
+    except Exception:
+        pass
+    return "", ""
 
 # ========== 数据库初始化 ==========
 def init_db():
@@ -60,6 +87,8 @@ class LogListResponse(BaseModel):
 class IPStatsEntry(BaseModel):
     client_ip: str
     access_count: int
+    location: str = ""
+    isp: str = ""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -86,14 +115,21 @@ async def log_requests(request: Request, call_next):
         return await call_next(request)
 
     response = await call_next(request)
+    client_ip = get_real_client_ip(request)
     with Session(engine) as session:
         session.add(AccessLog(
-            client_ip=get_real_client_ip(request),
+            client_ip=client_ip,
             method=request.method,
             path=request.url.path + (f"?{request.url.query}" if request.url.query else ""),
             timestamp=datetime.now(timezone.utc).isoformat(),
         ))
         session.commit()
+        # 仅在该IP在 ip_info 表中不存在时才查询，且使用同一会话进行插入
+        ip_row = session.get(IPInfo, client_ip)
+        if ip_row is None:
+            location, isp = await fetch_ip_info(client_ip)
+            session.add(IPInfo(ip=client_ip, location=location, isp=isp))
+            session.commit()
     return response
 
 # ========== API端点 ==========
@@ -115,7 +151,14 @@ def get_ip_stats(limit: int = Query(50, ge=1, le=500)):
             .order_by(func.count(AccessLog.id).desc())
             .limit(limit)
         ).all()
-    items = [IPStatsEntry(client_ip=r.client_ip, access_count=r.access_count) for r in results]
+        items: list[IPStatsEntry] = []
+        for r in results:
+            ip = r.client_ip
+            count = r.access_count
+            ip_info = session.get(IPInfo, ip)
+            location = ip_info.location if ip_info else ""
+            isp = ip_info.isp if ip_info else ""
+            items.append(IPStatsEntry(client_ip=ip, access_count=count, location=location, isp=isp))
     return IPStatsResponse(total=len(items), items=items)
 
 @app.get("/show/me/overview")

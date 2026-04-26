@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.136.0",
     "sqlmodel>=0.0.38",
     "uvicorn>=0.45.0",
+    "httpx>=0.28.0",
 ]
 
 [[tool.uv.index]]

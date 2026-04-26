@@ -15,7 +15,7 @@ const activeTab = ref<Tab>('overview')
 interface Overview { total_requests: number; unique_ips: number }
 interface LogItem { id: number; client_ip: string; method: string; path: string; timestamp: string }
 interface LogsResponse { total: number; page: number; page_size: number; items: LogItem[] }
-interface IPItem { client_ip: string; access_count: number }
+interface IPItem { client_ip: string; location: string; isp: string; access_count: number }
 interface PathItem { path: string; access_count: number }
 
 const overview = ref<Overview | null>(null)
@@ -116,10 +116,12 @@ load()
         </section>
         <section v-else-if="activeTab === 'ips'">
           <table>
-            <thead><tr><th>IP</th><th>Access Count</th></tr></thead>
+            <thead><tr><th>IP</th><th>Location</th><th>ISP</th><th>Access Count</th></tr></thead>
             <tbody>
               <tr v-for="item in ipList" :key="item.client_ip">
                 <td class="mono">{{ item.client_ip }}</td>
+                <td>{{ item.location || '-' }}</td>
+                <td>{{ item.isp || '-' }}</td>
                 <td class="mono">{{ item.access_count.toLocaleString() }}</td>
               </tr>
             </tbody>
