@@ -3,3 +3,4 @@ Backend/uv.lock
 Backend/.claude/settings.local.json
 AGENTS.md
 Frontend/package-lock.json
+.claude/

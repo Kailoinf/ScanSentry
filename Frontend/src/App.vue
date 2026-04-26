@@ -72,8 +72,7 @@ function next() {
 function toBeijingTime(utc: string): string {
   const d = new Date(utc)
   const pad = (n: number) => String(n).padStart(2, '0')
-  const beijing = new Date(d.getTime() + 8 * 60 * 60 * 1000)
-  return `${beijing.getFullYear()}-${pad(beijing.getMonth() + 1)}-${pad(beijing.getDate())} ${pad(beijing.getHours())}:${pad(beijing.getMinutes())}:${pad(beijing.getSeconds())}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 load()
