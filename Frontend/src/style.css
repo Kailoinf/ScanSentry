@@ -101,14 +101,14 @@ main {
   gap: 4px;
 }
 
-.stat-label {
+.stat .lbl {
   font-size: 12px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-.stat-value {
+.stat .val {
   font-size: 28px;
   font-weight: 600;
   font-family: ui-monospace, Consolas, monospace;
