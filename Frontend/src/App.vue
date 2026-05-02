@@ -69,10 +69,9 @@ function next() {
   if (logs.value && page.value * pageSize < logs.value.total) { page.value++; load() }
 }
 
-function toBeijingTime(utc: string): string {
+function formatTime(utc: string): string {
   const d = new Date(utc)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  return d.toLocaleString('zh-CN', { hour12: false })
 }
 
 load()
@@ -110,7 +109,7 @@ load()
                 <td class="mono">{{ item.client_ip }}</td>
                 <td class="mono">{{ item.method }}</td>
                 <td class="mono">{{ item.path }}</td>
-                <td class="mono">{{ toBeijingTime(item.timestamp) }}</td>
+                <td class="mono">{{ formatTime(item.timestamp) }}</td>
               </tr>
             </tbody>
           </table>
