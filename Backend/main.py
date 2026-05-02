@@ -117,26 +117,36 @@ async def log_requests(request: Request, call_next):
         return await call_next(request)
 
     response = await call_next(request)
-    client_ip = get_real_client_ip(request)
-    with Session(engine) as session:
-        session.add(AccessLog(
-            client_ip=client_ip,
-            method=request.method,
-            path=request.url.path + (f"?{request.url.query}" if request.url.query else ""),
-            timestamp=datetime.now(timezone.utc).isoformat(),
-        ))
-        session.commit()
-        # 仅在该IP在 ip_info 表中不存在时才查询，且使用同一会话进行插入
-        ip_row = session.get(IPInfo, client_ip)
-        if ip_row is None:
-            location, isp = await fetch_ip_info(client_ip)
-            session.add(IPInfo(ip=client_ip, location=location, isp=isp))
+    try:
+        client_ip = get_real_client_ip(request)
+        # 限制 path 长度，防止恶意数据
+        raw_path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        path = raw_path[:2048] if len(raw_path) > 2048 else raw_path
+
+        with Session(engine) as session:
+            session.add(AccessLog(
+                client_ip=client_ip,
+                method=request.method,
+                path=path,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            ))
             session.commit()
+            # 仅在该IP在 ip_info 表中不存在时才查询
+            ip_row = session.get(IPInfo, client_ip)
+            if ip_row is None:
+                try:
+                    location, isp = await fetch_ip_info(client_ip)
+                    session.add(IPInfo(ip=client_ip, location=location, isp=isp))
+                    session.commit()
+                except Exception:
+                    session.rollback()  # 忽略 IP 信息插入失败（可能是并发插入）
+    except Exception:
+        pass  # 日志记录失败不应影响正常请求
     return response
 
 # ========== API端点 ==========
 @app.get("/show/me/logs", response_model=LogListResponse)
-def get_logs(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=200)):
+def get_logs(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)):
     with Session(engine) as session:
         total = session.exec(select(func.count(AccessLog.id))).one()
         logs = session.exec(
