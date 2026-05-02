@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 const SERVERS = [
   { label: 'ss.gkux.cn', host: 'https://ss.gkux.cn' },
@@ -25,7 +25,13 @@ const pathList = ref<PathItem[]>([])
 const loading = ref(false)
 const error = ref('')
 const page = ref(1)
-const pageSize = 20
+const pageSize = ref(20)
+const jumpToPage = ref('')
+
+const totalPages = computed(() => {
+  if (!logs.value) return 0
+  return Math.ceil(logs.value.total / pageSize.value)
+})
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(base() + path)
@@ -40,12 +46,12 @@ async function load() {
     if (activeTab.value === 'overview') {
       overview.value = await get<Overview>('/show/me/overview')
     } else if (activeTab.value === 'logs') {
-      logs.value = await get<LogsResponse>(`/show/me/logs?page=${page.value}&page_size=${pageSize}`)
+      logs.value = await get<LogsResponse>(`/show/me/logs?page=${page.value}&page_size=${pageSize.value}`)
     } else if (activeTab.value === 'ips') {
-      const d = await get<{ items: IPItem[] }>('/show/me/ip?limit=50')
+      const d = await get<{ items: IPItem[] }>('/show/me/ip?limit=100')
       ipList.value = d.items
     } else {
-      const d = await get<{ items: PathItem[] }>('/show/me/path?limit=50')
+      const d = await get<{ items: PathItem[] }>('/show/me/path?limit=100')
       pathList.value = d.items
     }
   } catch (e: unknown) {
@@ -66,7 +72,27 @@ function prev() {
 }
 
 function next() {
-  if (logs.value && page.value * pageSize < logs.value.total) { page.value++; load() }
+  if (logs.value && page.value * pageSize.value < logs.value.total) { page.value++; load() }
+}
+
+function goToPage() {
+  const p = parseInt(jumpToPage.value)
+  if (p && p >= 1 && p <= totalPages.value) {
+    page.value = p
+    jumpToPage.value = ''
+    load()
+  }
+}
+
+function changePageSize(e: Event) {
+  const target = e.target as HTMLSelectElement
+  pageSize.value = parseInt(target.value)
+  page.value = 1
+  load()
+}
+
+function refresh() {
+  load()
 }
 
 function toBeijingTime(utc: string): string {
@@ -90,19 +116,34 @@ load()
         <button :class="{ active: activeTab === 'ips' }" @click="tab('ips')">IPs</button>
         <button :class="{ active: activeTab === 'paths' }" @click="tab('paths')">Paths</button>
       </nav>
+      <button class="refresh" @click="refresh" :disabled="loading">刷新</button>
     </header>
     <main>
-      <div v-if="loading">Loading...</div>
-      <div v-else-if="error" class="err">{{ error }}</div>
+      <div v-if="loading" class="loading">加载中...</div>
+      <div v-else-if="error" class="error">
+        <span>{{ error }}</span>
+        <button @click="refresh">重试</button>
+      </div>
       <template v-else>
         <section v-if="activeTab === 'overview' && overview">
           <div class="stat-grid">
-            <div class="stat"><span class="lbl">Total Requests</span><span class="val">{{ overview.total_requests.toLocaleString() }}</span></div>
-            <div class="stat"><span class="lbl">Unique IPs</span><span class="val">{{ overview.unique_ips.toLocaleString() }}</span></div>
+            <div class="stat"><span class="lbl">总请求数</span><span class="val">{{ overview.total_requests.toLocaleString() }}</span></div>
+            <div class="stat"><span class="lbl">独立 IP 数</span><span class="val">{{ overview.unique_ips.toLocaleString() }}</span></div>
           </div>
         </section>
         <section v-else-if="activeTab === 'logs' && logs">
-          <p class="meta">Total {{ logs.total.toLocaleString() }} records</p>
+          <div class="table-header">
+            <span class="meta">共 {{ logs.total.toLocaleString() }} 条记录</span>
+            <div class="page-size">
+              <label>每页：</label>
+              <select :value="pageSize" @change="changePageSize">
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+          </div>
           <table>
             <thead><tr><th>IP</th><th>Method</th><th>Path</th><th>Time</th></tr></thead>
             <tbody>
@@ -115,9 +156,15 @@ load()
             </tbody>
           </table>
           <div class="pager">
-            <button @click="prev" :disabled="page <= 1">Prev</button>
-            <span>Page {{ page }}</span>
-            <button @click="next" :disabled="!logs || page * pageSize >= logs.total">Next</button>
+            <button @click="prev" :disabled="page <= 1">上一页</button>
+            <span class="page-info">
+              {{ page }} / {{ totalPages }}
+              <span class="jump">
+                跳转：<input v-model="jumpToPage" @keyup.enter="goToPage" type="number" min="1" :max="totalPages" />
+                <button @click="goToPage">Go</button>
+              </span>
+            </span>
+            <button @click="next" :disabled="!logs || page * pageSize >= logs.total">下一页</button>
           </div>
         </section>
         <section v-else-if="activeTab === 'ips'">
